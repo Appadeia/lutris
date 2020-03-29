@@ -16,7 +16,24 @@ from lutris import runtime
 from lutris.util.log import logger
 from lutris.util import system
 
-WRAPPER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "lutris-wrapper")
+
+def get_wrapper_script_location():
+    """Return absolute path of lutris-wrapper script"""
+    wrapper_relpath = "share/lutris/bin/lutris-wrapper"
+    candidates = [
+        os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "..")),
+        os.path.dirname(os.path.dirname(settings.__file__)),
+        "/usr",
+        "/usr/local",
+    ]
+    for candidate in candidates:
+        wrapper_abspath = os.path.join(candidate, wrapper_relpath)
+        if os.path.isfile(wrapper_abspath):
+            return wrapper_abspath
+    raise FileNotFoundError("Couldn't find lutris-wrapper script in any of the expected locations")
+
+
+WRAPPER_SCRIPT = get_wrapper_script_location()
 
 
 class MonitoredCommand:
@@ -34,6 +51,7 @@ class MonitoredCommand:
             include_processes=None,
             exclude_processes=None,
             log_buffer=None,
+            title=None,
     ):  # pylint: disable=too-many-arguments
         self.ready_state = True
         self.env = self.get_environment(env)
@@ -60,6 +78,8 @@ class MonitoredCommand:
 
         self._stdout = io.StringIO()
 
+        self._title = title if title else command[0]
+
     @property
     def stdout(self):
         return self._stdout.getvalue()
@@ -70,6 +90,7 @@ class MonitoredCommand:
 
         return [
             WRAPPER_SCRIPT,
+            self._title,
             str(len(self.include_processes)),
             str(len(self.exclude_processes)),
         ] + self.include_processes + self.exclude_processes + self.command

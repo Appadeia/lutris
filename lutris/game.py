@@ -44,6 +44,7 @@ class Game(GObject.Object):
         "game-stopped": (GObject.SIGNAL_RUN_FIRST, None, (int,)),
         "game-removed": (GObject.SIGNAL_RUN_FIRST, None, ()),
         "game-updated": (GObject.SIGNAL_RUN_FIRST, None, ()),
+        "game-installed": (GObject.SIGNAL_RUN_FIRST, None, ()),
     }
 
     def __init__(self, game_id=None):
@@ -81,8 +82,6 @@ class Game(GObject.Object):
         self.heartbeat = None
         self.killswitch = None
         self.state = self.STATE_IDLE
-        self.exit_main_loop = False
-        self.xboxdrv_thread = None
         self.game_runtime_config = {}
         self.resolution_changed = False
         self.compositor_disabled = False
@@ -444,6 +443,9 @@ class Game(GObject.Object):
             ).communicate()
             xkbcomp.communicate()
 
+        if system_config.get("aco"):
+            env["RADV_PERFTEST"] = "aco"
+
         pulse_latency = system_config.get("pulse_latency")
         if pulse_latency:
             env["PULSE_LATENCY_MSEC"] = "60"
@@ -538,11 +540,6 @@ class Game(GObject.Object):
         if system_config.get("disable_compositor"):
             self.set_desktop_compositing(False)
 
-        # xboxdrv setup
-        xboxdrv_config = system_config.get("xboxdrv")
-        if xboxdrv_config:
-            self.xboxdrv_start(xboxdrv_config)
-
         prelaunch_command = system_config.get("prelaunch_command")
         if system.path_exists(prelaunch_command):
             self.prelaunch_executor = MonitoredCommand(
@@ -562,6 +559,7 @@ class Game(GObject.Object):
         """Run a background command to lauch the game"""
         self.game_thread = MonitoredCommand(
             self.game_runtime_config["args"],
+            title=self.name,
             runner=self.runner,
             env=self.game_runtime_config["env"],
             term=self.game_runtime_config["terminal"],
@@ -584,38 +582,6 @@ class Game(GObject.Object):
         if not self.timer.finished:
             self.timer.end()
             self.playtime += self.timer.duration / 3600
-
-    def xboxdrv_start(self, config):
-        """Start xboxdrv in a background command"""
-        command = [
-            "pkexec",
-            "xboxdrv",
-            "--daemon",
-            "--detach-kernel-driver",
-            "--dbus",
-            "session",
-            "--silent",
-        ] + shlex.split(config)
-        logger.debug("[xboxdrv] %s", " ".join(command))
-        self.xboxdrv_thread = MonitoredCommand(command, include_processes=["xboxdrv"])
-        self.xboxdrv_thread.stop_func = self.xboxdrv_stop
-        self.xboxdrv_thread.start()
-
-    @staticmethod
-    def reload_xpad():
-        """Reloads the xpads module.
-        The path is hardcoded because this script is allowed to be executed as
-        root with a PolicyKit rule put in place by the packages.
-        Note to packagers: If you don't intend to create a PolicyKit rule for
-        this script then don't package it as calling it will fail.
-        """
-        if system.path_exists("/usr/share/lutris/bin/resetxpad"):
-            os.system("pkexec /usr/share/lutris/bin/resetxpad")
-
-    def xboxdrv_stop(self):
-        """Stop xboxdrv"""
-        os.system("pkexec xboxdrvctl --shutdown")
-        self.reload_xpad()
 
     def prelaunch_beat(self):
         """Watch the prelaunch command"""
@@ -653,9 +619,7 @@ class Game(GObject.Object):
             return
 
         logger.info("Stopping %s", self)
-        if self.runner.system_config.get("xboxdrv"):
-            logger.debug("Stopping xboxdrv")
-            self.xboxdrv_thread.stop()
+
         if self.game_thread:
             jobs.AsyncCall(self.game_thread.stop, None)
         self.stop_game()
@@ -707,8 +671,6 @@ class Game(GObject.Object):
             restore_gamma()
 
         self.process_return_codes()
-        if self.exit_main_loop:
-            exit()
 
     def process_return_codes(self):
         """Do things depending on how the game quitted."""

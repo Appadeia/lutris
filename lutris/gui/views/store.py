@@ -96,15 +96,13 @@ class GameStore(GObject.Object):
             show_installed_first=False,
     ):
         super(GameStore, self).__init__()
-
-        games_raw = pga.get_games(show_installed_first=show_installed_first)
-        if show_hidden_games:
-            self.games = games_raw
-        else:
+        self.games = games or pga.get_games(show_installed_first=show_installed_first)
+        if not show_hidden_games:
             # Check if the PGA contains game IDs that the user does not
             # want to see
-            ignores = pga.get_hidden_ids()
-            self.games = [game for game in games_raw if game["id"] not in ignores]
+            self.games = [
+                game for game in self.games if game["id"] not in pga.get_hidden_ids()
+            ]
 
         self.search_mode = False
         self.games_to_refresh = set()
@@ -140,7 +138,11 @@ class GameStore(GObject.Object):
         self.prevent_sort_update = False  # prevent recursion with signals
         self.modelfilter = self.store.filter_new()
         self.modelfilter.set_visible_func(self.filter_view)
-        self.modelsort = Gtk.TreeModelSort.sort_new_with_model(self.modelfilter)
+        try:
+            self.modelsort = Gtk.TreeModelSort.sort_new_with_model(self.modelfilter)
+        except AttributeError:
+            # Apparently some API breaking changes on GTK minor versions.
+            self.modelsort = Gtk.TreeModelSort.new_with_model(self.modelfilter)
         self.modelsort.connect("sort-column-changed", self.on_sort_column_changed)
         self.modelsort.set_sort_func(sort_col, sort_func, sort_col)
         self.sort_view(sort_key, sort_ascending)

@@ -17,9 +17,10 @@ class LutrisStatusIcon:
         self.application = application
         self.icon = self.create()
         self.menu = self.get_menu()
-        self.icon.set_menu(self.menu)
         self.set_visible(True)
-        if not APP_INDICATOR_SUPPORTED:
+        if APP_INDICATOR_SUPPORTED:
+            self.icon.set_menu(self.menu)
+        else:
             self.icon.connect("activate", self.on_activate)
             self.icon.connect("popup-menu", self.on_menu_popup)
 
@@ -38,6 +39,7 @@ class LutrisStatusIcon:
         return self.icon.is_visible()
 
     def set_visible(self, value):
+        """Set the visibility of the icon"""
         if APP_INDICATOR_SUPPORTED:
             if value:
                 visible = AppIndicator.IndicatorStatus.ACTIVE
@@ -96,6 +98,7 @@ class LutrisStatusIcon:
     def on_game_selected(self, _widget, game_id):
         self.application.launch(Game(game_id))
 
+
 class LutrisTray(Gtk.StatusIcon):
     """Lutris tray icon"""
 
@@ -105,6 +108,3 @@ class LutrisTray(Gtk.StatusIcon):
         self.set_visible(True)
         self.application = application
         self.set_from_icon_name("lutris")
-
-        self.menu = self.get_menu()
-
